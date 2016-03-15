@@ -18,6 +18,16 @@ void sighuphandler(int signum, siginfo_t* info, void* f) {
     printf("Received SIGHUP from %d\n", info->si_pid );
 }
 
+void sigchldhandler(int signum, siginfo_t* info, void* f) {
+    printf("Received SIGCHLD from %d with following fields:\n", info->si_pid);
+    printf("Signal value: %d\n", info->si_value);
+    printf("Error number: %d\n", info->si_errno);
+    printf("UID of sender: %d\n", info->si_uid);
+    printf("Address of fault: %d\n", info->si_addr);
+    printf("Status: %d\n", info->si_status);
+    printf("Band event: %d\n", info->si_band);
+}
+
 
 
 int main(int argc, char** argv) {
@@ -60,7 +70,25 @@ int main(int argc, char** argv) {
     if (strcmp(mode, "pipe") == 0) {
         printf("Pipe mode activated\n");
     } else if (strcmp(mode, "child") == 0) {
-        printf("Child mode activated\n");
+        struct sigaction actSIGCHLD;
+        
+        memset(&actSIGCHLD, 0, sizeof(actSIGCHLD));
+        actSIGCHLD.sa_sigaction = sigchldhandler;
+        actSIGCHLD.sa_flags = SA_SIGINFO;
+        sigaction(SIGCHLD, &actSIGCHLD, NULL);
+        
+        pid_t pid = fork();
+        if (0 == pid) {
+            time_t t;
+            srand((unsigned) time(&t));
+            int sleepTime = rand() % 10;
+            printf("Child is sleeping for a %d seconds\n",sleepTime);
+            sleep(sleepTime);
+            exit(13);
+        } else if (pid > 0) {
+            while(1){
+            }
+        }
     } else if (strcmp(mode, "std") == 0) {
         
         struct sigaction actSIGUSRONE;
@@ -83,16 +111,9 @@ int main(int argc, char** argv) {
         sigaction(SIGHUP, &actSIGHUP, NULL);
         
         while (1) {
-            sleep(1);
-          /*  raise(SIGUSR2);
-            raise(SIGUSR1);
-            raise(SIGHUP); */
         } 
         
-    } else if (strcmp(mode, "kill") == 0) {
-        printf("%s\n", processToKill);
-        printf("%s\n", signalToSend);
-        
+    } else if (strcmp(mode, "kill") == 0) {        
         kill(atoi(processToKill), atoi(signalToSend));
     } else if (strcmp(mode, "posix") == 0) {
         printf("POSIX mode activated");
