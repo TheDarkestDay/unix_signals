@@ -18,7 +18,7 @@ run-kill:
 	./$(OUT)/main.o --mode=kill --signal=30 --pid=8888
     
 run-posix:
-	./$(OUT)/main.o --mode=posix
+	./$(OUT)/main.o --mode=posix --amount=5
 
 run-pipe:
 	./$(OUT)/main.o --mode=pipe    

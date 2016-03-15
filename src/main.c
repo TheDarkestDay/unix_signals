@@ -6,6 +6,9 @@
 #include <ctype.h>
 #include <getopt.h>
 
+char log[100][100];
+int logIndex = 0;
+
 void sigusronehandler(int signum, siginfo_t* info, void* f) {
     printf("Received SIGUSR1 from %d\n", info->si_pid );
 }
@@ -28,6 +31,28 @@ void sigchldhandler(int signum, siginfo_t* info, void* f) {
     printf("Band event: %d\n", info->si_band);
 }
 
+void sigchldhandlerPOSIX(int signum, siginfo_t* info, void* f) {
+    printf("Parent prints:\n");
+    for (int i = 0;i<logIndex;i++) {
+        printf("%s\n", log[i]);
+    } 
+}
+
+void sigusronehandlerPOSIX(int signum, siginfo_t* info, void* f) {
+    sprintf(log[logIndex], "%d | %d | %d | %d ", logIndex+1, getpid(), info->si_signo, info->si_value.sival_int);
+    logIndex++;
+}
+
+void sigusrtwohandlerPOSIX(int signum, siginfo_t* info, void* f) {
+    sprintf(log[logIndex], "%d | %d | %d | %d ", logIndex+1, getpid(), info->si_signo, info->si_value.sival_int);
+    logIndex++;
+}
+
+void sighuphandlerPOSIX(int signum, siginfo_t* info, void* f) {
+    sprintf(log[logIndex], "%d | %d | %d | %d ", logIndex+1, getpid(), info->si_signo, info->si_value.sival_int);
+    logIndex++;
+}
+
 
 
 int main(int argc, char** argv) {
@@ -37,6 +62,9 @@ int main(int argc, char** argv) {
     char* signalToSend;
     char* processToKill;
     char* signalsAmount;
+    
+    time_t t;
+    srand((unsigned) time(&t));
     
     while (1) {
         int option_index = 0;
@@ -79,8 +107,6 @@ int main(int argc, char** argv) {
         
         pid_t pid = fork();
         if (0 == pid) {
-            time_t t;
-            srand((unsigned) time(&t));
             int sleepTime = rand() % 10;
             printf("Child is sleeping for a %d seconds\n",sleepTime);
             sleep(sleepTime);
@@ -116,7 +142,63 @@ int main(int argc, char** argv) {
     } else if (strcmp(mode, "kill") == 0) {        
         kill(atoi(processToKill), atoi(signalToSend));
     } else if (strcmp(mode, "posix") == 0) {
-        printf("POSIX mode activated");
+        pid_t chld_pid = fork();
+        if (0 == chld_pid) {
+            int amountInt = atoi(signalsAmount);
+            union sigval val;
+            
+            printf("Child prints:\n");
+            for(int i=0;i<amountInt;i++) {
+                int diceRoll = rand()%3;
+                int nextSignal;
+                switch(diceRoll) {
+                    case 0:
+                        nextSignal = SIGUSR1;
+                        break;
+                    case 1:
+                        nextSignal = SIGUSR2;
+                        break;
+                    case 2:
+                        nextSignal = SIGHUP;
+                        break;
+                }
+                
+                val.sival_int = rand()%100;
+                sigqueue(getppid(),nextSignal,val);
+                printf("%d | %d | %d | %d | %d\n", i+1, getpid(), getppid(), nextSignal, val.sival_int);
+                sleep(5);
+            }
+            exit(13);
+        } else if (chld_pid > 0) {
+            struct sigaction actSIGCHLD;
+        
+            memset(&actSIGCHLD, 0, sizeof(actSIGCHLD));
+            actSIGCHLD.sa_sigaction = sigchldhandlerPOSIX;
+            actSIGCHLD.sa_flags = SA_SIGINFO;
+            sigaction(SIGCHLD, &actSIGCHLD, NULL);
+            
+            struct sigaction actSIGUSRONE;
+            struct sigaction actSIGUSRTWO;
+            struct sigaction actSIGHUP;
+    
+            memset(&actSIGUSRONE, 0, sizeof(actSIGUSRONE));
+            actSIGUSRONE.sa_sigaction = sigusronehandlerPOSIX;
+            actSIGUSRONE.sa_flags = SA_SIGINFO;
+            sigaction(SIGUSR1, &actSIGUSRONE, NULL);
+        
+            memset(&actSIGUSRTWO, 0, sizeof(actSIGUSRTWO));
+            actSIGUSRTWO.sa_sigaction = sigusrtwohandlerPOSIX;
+            actSIGUSRTWO.sa_flags = SA_SIGINFO;
+            sigaction(SIGUSR2, &actSIGUSRTWO, NULL);
+        
+            memset(&actSIGHUP, 0, sizeof(actSIGHUP));
+            actSIGHUP.sa_sigaction = sighuphandlerPOSIX;
+            actSIGHUP.sa_flags = SA_SIGINFO;
+            sigaction(SIGHUP, &actSIGHUP, NULL);
+            
+            while(1) {
+            }
+        }
     }
     
     
