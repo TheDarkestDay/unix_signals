@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <getopt.h>
+#include <errno.h>
 
 char log[100][100];
 int logIndex = 0;
@@ -29,6 +30,10 @@ void sigchldhandler(int signum, siginfo_t* info, void* f) {
     printf("Address of fault: %d\n", info->si_addr);
     printf("Status: %d\n", info->si_status);
     printf("Band event: %d\n", info->si_band);
+}
+
+void sigpipehandler(int signum, siginfo_t* info, void* f) {
+    printf("Pipe closed\n");
 }
 
 void sigchldhandlerPOSIX(int signum, siginfo_t* info, void* f) {
@@ -96,14 +101,60 @@ int main(int argc, char** argv) {
     }
     
     if (strcmp(mode, "pipe") == 0) {
-        printf("Pipe mode activated\n");
+        struct sigaction actSIGPIPE;
+        
+        memset(&actSIGPIPE, 0, sizeof(actSIGPIPE));
+        actSIGPIPE.sa_sigaction = sigpipehandler;
+        actSIGPIPE.sa_flags = SA_SIGINFO;
+        if (sigaction(SIGPIPE, &actSIGPIPE, NULL) == -1) {
+            perror("Signal handler assignment failed");
+            exit(1);
+        };
+        
+        int fd[2];
+        pid_t reader_pid;
+        char msg[] = "Testing pipe";
+        
+        if (pipe(fd) < 0) {
+            perror("Pipe creation failed");
+            exit(1);
+        };
+        reader_pid = fork();
+        
+        if(reader_pid == -1)
+        {
+            perror("Forking child failed");
+            exit(1);
+        }
+        
+        if (reader_pid == 0) {
+            close(fd[1]);
+            close(fd[0]);
+            exit(0);
+        } else if (reader_pid > 0) {
+            close(fd[0]);
+            sleep(5);
+            if (write(fd[1], msg, (strlen(msg)+1)) == -1) {
+                perror("Writing failed");
+                exit(1);
+            };
+        }
+        
+        while(1) {
+            
+        }
+        
+        
     } else if (strcmp(mode, "child") == 0) {
         struct sigaction actSIGCHLD;
         
         memset(&actSIGCHLD, 0, sizeof(actSIGCHLD));
         actSIGCHLD.sa_sigaction = sigchldhandler;
         actSIGCHLD.sa_flags = SA_SIGINFO;
-        sigaction(SIGCHLD, &actSIGCHLD, NULL);
+        if (sigaction(SIGCHLD, &actSIGCHLD, NULL) == -1) {
+            perror("Signal handler assignment failed");
+            exit(1);
+        };
         
         pid_t pid = fork();
         if (0 == pid) {
@@ -114,6 +165,9 @@ int main(int argc, char** argv) {
         } else if (pid > 0) {
             while(1){
             }
+        } else {
+            perror("Forking child failed");
+            exit(1);
         }
     } else if (strcmp(mode, "std") == 0) {
         
@@ -124,23 +178,35 @@ int main(int argc, char** argv) {
         memset(&actSIGUSRONE, 0, sizeof(actSIGUSRONE));
         actSIGUSRONE.sa_sigaction = sigusronehandler;
         actSIGUSRONE.sa_flags = SA_SIGINFO;
-        sigaction(SIGUSR1, &actSIGUSRONE, NULL);
+        if (sigaction(SIGUSR1, &actSIGUSRONE, NULL) == -1) {
+            perror("Signal handler assignment failed");
+            exit(1);
+        };
         
         memset(&actSIGUSRTWO, 0, sizeof(actSIGUSRTWO));
         actSIGUSRTWO.sa_sigaction = sigusrtwohandler;
         actSIGUSRTWO.sa_flags = SA_SIGINFO;
-        sigaction(SIGUSR2, &actSIGUSRTWO, NULL);
+        if (sigaction(SIGUSR2, &actSIGUSRTWO, NULL) == -1) {
+            perror("Signal handler assignment failed");
+            exit(1);
+        };
         
         memset(&actSIGHUP, 0, sizeof(actSIGHUP));
         actSIGHUP.sa_sigaction = sighuphandler;
         actSIGHUP.sa_flags = SA_SIGINFO;
-        sigaction(SIGHUP, &actSIGHUP, NULL);
+        if (sigaction(SIGHUP, &actSIGHUP, NULL)) {
+            perror("Signal handler assignment failed");
+            exit(1);
+        };
         
         while (1) {
         } 
         
     } else if (strcmp(mode, "kill") == 0) {        
-        kill(atoi(processToKill), atoi(signalToSend));
+        if (kill(atoi(processToKill), atoi(signalToSend)) == -1) {
+            perror("Signal sending failed");
+            exit(1);
+        };
     } else if (strcmp(mode, "posix") == 0) {
         pid_t chld_pid = fork();
         if (0 == chld_pid) {
@@ -175,7 +241,10 @@ int main(int argc, char** argv) {
             memset(&actSIGCHLD, 0, sizeof(actSIGCHLD));
             actSIGCHLD.sa_sigaction = sigchldhandlerPOSIX;
             actSIGCHLD.sa_flags = SA_SIGINFO;
-            sigaction(SIGCHLD, &actSIGCHLD, NULL);
+            if (sigaction(SIGCHLD, &actSIGCHLD, NULL) == -1) {
+                perror("Signal handler assignment failed");
+                exit(1);
+            };
             
             struct sigaction actSIGUSRONE;
             struct sigaction actSIGUSRTWO;
@@ -184,20 +253,32 @@ int main(int argc, char** argv) {
             memset(&actSIGUSRONE, 0, sizeof(actSIGUSRONE));
             actSIGUSRONE.sa_sigaction = sigusronehandlerPOSIX;
             actSIGUSRONE.sa_flags = SA_SIGINFO;
-            sigaction(SIGUSR1, &actSIGUSRONE, NULL);
+            if (sigaction(SIGUSR1, &actSIGUSRONE, NULL) == -1) {
+                perror("Signal handler assignment failed");
+                exit(1);
+            };
         
             memset(&actSIGUSRTWO, 0, sizeof(actSIGUSRTWO));
             actSIGUSRTWO.sa_sigaction = sigusrtwohandlerPOSIX;
             actSIGUSRTWO.sa_flags = SA_SIGINFO;
-            sigaction(SIGUSR2, &actSIGUSRTWO, NULL);
+            if (sigaction(SIGUSR2, &actSIGUSRTWO, NULL) == -1) {
+                perror("Signal handler assignment failed");
+                exit(1);
+            };
         
             memset(&actSIGHUP, 0, sizeof(actSIGHUP));
             actSIGHUP.sa_sigaction = sighuphandlerPOSIX;
             actSIGHUP.sa_flags = SA_SIGINFO;
-            sigaction(SIGHUP, &actSIGHUP, NULL);
+            if (sigaction(SIGHUP, &actSIGHUP, NULL) == -1) {
+                perror("Signal handler assignment failed");
+                exit(1);
+            };
             
             while(1) {
             }
+        } else {
+            perror("Forking child failed");
+            exit(1);
         }
     }
     
